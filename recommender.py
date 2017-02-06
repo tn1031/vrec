@@ -1,6 +1,6 @@
 import time
 
-class Recommender():    
+class Recommender(object):
     def __init__(self, ratings):
         self.n_user, self.n_item = ratings.shape
         self.n_rating = ratings.nnz
@@ -28,4 +28,3 @@ class Recommender():
                          cur_loss,
                          time.time() - rap_t))
         return cur_loss
-
