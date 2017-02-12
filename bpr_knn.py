@@ -16,6 +16,8 @@ class BPRknn(Recommender):
                  init_mean=0.0, init_stdev=0.1):
         super(BPRknn, self).__init__(ratings)
 
+        self.observed_index = ratings.copy().rows.tolist()
+
         # hyper parameters
         self.reg_pos = reg_pos  # regularization parameters
         self.reg_neg = reg_neg  # regularization parameters
@@ -59,7 +61,7 @@ class BPRknn(Recommender):
         # Each training epoch
         for s in range(self.n_rating):
             u = np.random.randint(self.n_user)
-            item_list = self.ratings.getrowview(u).rows[0]
+            item_list = list(self.observed_index[u])
             if len(item_list) == 0:
                 continue
 
@@ -82,21 +84,23 @@ class BPRknn(Recommender):
         y_neg = self.predict(user, j)  # target value of negative instance
         mult = self.partial_loss(y_pos - y_neg)
 
-        item_list = self.ratings.getrow(user).rows[0]
+        item_list = list(self.observed_index[user])
 
         # update {c_il, c_li}
         if item in item_list:
             item_list.remove(item)
         if len(item_list) > 0:
-            self.C[item, np.array(item_list)] += lr * (mult - self.reg_pos * self.C[item, np.array(item_list)])
-            self.C[np.array(item_list), item] += lr * (mult - self.reg_pos * self.C[np.array(item_list), item])
+            arr = np.array(item_list)
+            self.C[item, arr] += lr * (mult - self.reg_pos * self.C[item, arr])
+            self.C[arr, item] += lr * (mult - self.reg_pos * self.C[arr, item])
 
         item_list.append(item)
         if j in item_list:
             item_list.remove(j)
         if len(item_list) > 0:
-            self.C[j, np.array(item_list)] += lr * (-mult - self.reg_neg * self.C[j, np.array(item_list)])
-            self.C[np.array(item_list), j] += lr * (-mult - self.reg_neg * self.C[np.array(item_list), j])
+            arr = np.array(item_list)
+            self.C[j, arr] += lr * (-mult - self.reg_neg * self.C[j, arr])
+            self.C[arr, j] += lr * (-mult - self.reg_neg * self.C[arr, j])
 
         return (y_pos - y_neg)**2
 
@@ -127,7 +131,7 @@ class BPRknn(Recommender):
         total_loss = 0.0
         for u in range(self.n_user):
             loss = 0
-            for i in self.ratings.getrowview(u).rows[0]:
+            for i in self.observed_index[u]:
                 pred = 1.0 / (1.0 + np.exp(-self.predict(u, i)))   # sigmoid
                 loss += np.power(self.ratings[u, i] - pred, 2)
             total_loss += loss
@@ -135,7 +139,7 @@ class BPRknn(Recommender):
         return total_loss
 
     def predict(self, user, item):
-        item_list = self.ratings.getrow(user).rows[0]
+        item_list = list(self.observed_index[user])
         if item in item_list:
             item_list.remove(item)
             
@@ -160,7 +164,7 @@ class BPRknn(Recommender):
 
     def to_str(self):
         d = self.__dict__.copy()
-        params = ['ratings', 'C']
+        params = ['ratings', 'C', 'observed_index']
         for p in params:
             d.pop(p)
         return json.dumps(d, indent=2)
@@ -170,4 +174,7 @@ if __name__ == '__main__':
     train, test = load_data('./yelp.rating')
     bpr = BPRknn(train)
     bpr.build(maxiter=5)
+
+    ev = Evaluator(bpr, test[:10000])
+    ev.evaluate_online(interval=10)
 
